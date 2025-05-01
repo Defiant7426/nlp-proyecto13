@@ -90,4 +90,17 @@ class Seq2Seq(nn.Module):
         self.decoder = decoder
         self.device = device
 
-    
+    def forward(self, src, trg, teacher_forcing_ratio = 0.5):
+        """
+            Procesa el par de secuencias fuente y objetivo.
+            Args:
+                src(Tensor): secuencia fuente [batch_size, src_len].
+                trg(Tensor): secuencia target [batch_size, trg_len].
+                teacher_forcing_ratio (float): Probabilidad de usar teacher forcing.
+            
+            Return:
+                output(Tensor): predicciones del decoder.
+        """
+        outputs = None
+
+        return outputs
