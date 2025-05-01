@@ -23,3 +23,16 @@ class Encoder(nn.Module):
 
         self.dropout = nn.Dropout(dropout)
     
+    def forward(self, src):
+        """
+            Procesa la secuencia fuente.
+            Arg:
+                src (Tensor): Secuencia de tokens de entrada [batch_size, src_len]
+            Return:
+
+        """
+        embedded = self.dropout(self.embedding(src))
+
+        pass
+
+    
