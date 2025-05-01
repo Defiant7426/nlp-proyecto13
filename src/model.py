@@ -75,3 +75,19 @@ class Decoder(nn.Module):
         prediction = None
 
         pass
+
+class Seq2Seq(nn.Module):
+    def __init__(self, encoder, decoder, device):
+        """
+            Args:
+                encoder(Encoder): instancia del encoder
+                decoder(Decoder): instancia del decoder
+                device(torch.device): cpu o cuda 
+        """
+        super().__init__() # Configuraciones internas de nn.Modules en Seq2Seq
+
+        self.encoder = encoder
+        self.decoder = decoder
+        self.device = device
+
+    
