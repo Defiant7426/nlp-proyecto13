@@ -58,3 +58,20 @@ class Decoder(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
         pass
+
+    def forward(self, input, hidden, cell):
+        """
+            Procesa un paso de la decodificación:
+            Arg:
+                input(Tensor): Token de entrada actual [batch size]
+                hidden(Tensor): Estado oculto del paso anterior [n_layers, batch_size, hidden_dim].
+                cell(Tensor): Estado de la celda en el paso anterior  [n_layers, batch_size, hidden_dim].
+            Return:
+        """
+
+        input = input.unsqueeze(1) # input = [batch size, 1]
+        embedded = self.dropout(self.embedding(input)) # embedded = [batch size, 1, emb dim]
+
+        prediction = None
+
+        pass
