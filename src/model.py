@@ -2,6 +2,7 @@
 
 import torch
 import torch.nn as nn
+import random
 
 class Encoder(nn.Module):
     def __init__(self,input_dim, emb_dim, hidden_dim, n_layers, dropout, pad_idx):
@@ -21,6 +22,13 @@ class Encoder(nn.Module):
         
         self.embedding = nn.Embedding(input_dim, emb_dim, padding_idx=pad_idx)
 
+        self.rnn = nn.LSTM(emb_dim, hidden_dim, n_layers,
+                           dropout=dropout if n_layers>1 else 0,
+                           bidirectional=True, batch_first=True)
+        
+        self.fc_hidden = nn.Linear(hidden_dim * 2, hidden_dim)
+        self.fc_cell = nn.Linear(hidden_dim * 2, hidden_dim)
+
         self.dropout = nn.Dropout(dropout)
     
     def forward(self, src):
@@ -33,7 +41,22 @@ class Encoder(nn.Module):
         """
         embedded = self.dropout(self.embedding(src))
 
-        pass
+        outputs, (hidden, cell) = self.rnn(embedded)
+
+        hidden = hidden.permute(1, 0, 2)
+        
+        hidden = hidden.reshape(hidden.size(0), self.n_layers, 2 * self.hidden_dim)
+
+        hidden = hidden.permute(1, 0, 2)
+
+        cell = cell.permute(1, 0, 2)
+        cell = cell.reshape(cell.size(0), self.n_layers, 2 * self.hidden_dim)
+        cell = cell.permute(1, 0, 2)
+
+        hidden = torch.tanh(self.fc_hidden(hidden))
+        cell = torch.tanh(self.fc_cell(cell))
+
+        return outputs, hidden, cell
 
 class Decoder(nn.Module):
     def __init__(self,output_dim, emb_dim, hidden_dim, n_layers, dropout, pad_idx):
@@ -55,9 +78,12 @@ class Decoder(nn.Module):
 
         self.embedding = nn.Embedding(output_dim, emb_dim, padding_idx=pad_idx)
 
-        self.dropout = nn.Dropout(dropout)
+        self.rnn = nn.LSTM(emb_dim, hidden_dim, n_layers,
+                           dropout=dropout if n_layers > 1 else 0, batch_first=True)
+        
+        self.fc_out = nn.Linear(hidden_dim, output_dim)
 
-        pass
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, input, hidden, cell):
         """
@@ -72,9 +98,11 @@ class Decoder(nn.Module):
         input = input.unsqueeze(1) # input = [batch size, 1]
         embedded = self.dropout(self.embedding(input)) # embedded = [batch size, 1, emb dim]
 
-        prediction = None
+        output, (hidden, cell) = self.rnn(embedded, (hidden, cell))
 
-        pass
+        prediction = self.fc_out(output.squeeze(1))
+
+        return prediction, hidden, cell
 
 class Seq2Seq(nn.Module):
     def __init__(self, encoder, decoder, device):
@@ -90,6 +118,11 @@ class Seq2Seq(nn.Module):
         self.decoder = decoder
         self.device = device
 
+        assert encoder.hidden_dim == decoder.hidden_dim, \
+            "Las dimensiones ocultas del encoder y decoder deben de ser iguales"
+        assert encoder.n_layers == decoder.n_layers, \
+            "El encoder y decoder deben de tener el mismo numero de capas"
+
     def forward(self, src, trg, teacher_forcing_ratio = 0.5):
         """
             Procesa el par de secuencias fuente y objetivo.
@@ -101,6 +134,32 @@ class Seq2Seq(nn.Module):
             Return:
                 output(Tensor): predicciones del decoder.
         """
-        outputs = None
+        batch_size = trg.shape[0]
+        trg_len = trg.shape[1]
+        trg_vocab_size = self.decoder.output_dim
+
+        outputs = torch.zeros(batch_size, trg_len, trg_vocab_size).to(self.device)
+
+        encoder_outputs, hidden, cell = self.encoder(src)
+
+        input = trg[:, 0]
+
+        for t in range(1, trg_len): # Predecimos a partir del segundo token
+
+            output, hidden, cell = self.decoder(input, hidden, cell)
+
+            # Guardamos las predicciones en el tensor de salida
+            outputs[:, t, :] = output 
+
+            # Decidir si usar teacher forcing
+            teacher_force = random.random() < teacher_forcing_ratio
+
+            # Obtener el token predicho con mayor probabilidad
+            top1 = output.argmax(1) 
+
+            # Si es teacher forcing, usar el token real como siguiente input
+            # Si no, usar el token predicho
+            input = trg[:, t] if teacher_force else top1
+
 
         return outputs
