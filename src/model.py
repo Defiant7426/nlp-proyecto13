@@ -3,6 +3,7 @@
 import torch
 import torch.nn as nn
 import random
+from src.attention import Attention
 
 class Encoder(nn.Module):
     def __init__(self,input_dim, emb_dim, hidden_dim, n_layers, dropout, pad_idx):
@@ -59,33 +60,36 @@ class Encoder(nn.Module):
         return outputs, hidden, cell
 
 class Decoder(nn.Module):
-    def __init__(self,output_dim, emb_dim, hidden_dim, n_layers, dropout, pad_idx):
+    def __init__(self, output_dim, emb_dim, enc_hid_dim, dec_hid_dim, n_layers, dropout, pad_idx, attention):
         """
             Inicializador del Decoder.
             Args:
                 output_dim(int): tamanio del vocabulario de salida.
                 emb_dim(int): dimension de los embeddings.
-                hidden_dim(int): dimension de la capa oculta del LSTM
+                enc_hid_dim (int): Dimensión oculta del encoder
+                dec_hid_dim (int): dimension de la capa oculta del LSTM
                 n_layers(int): Numero de capas del LSTM
                 dropout (float): Probabilidad de dropout
                 pad_idx: Indice del token de padding en el vocabulario
+                attention (Attention): Instancia de la clase Attention.
         """
         super().__init__() # Configuraciones internas del Module.nn en el Decoder
 
         self.output_dim = output_dim
-        self.hidden_dim = hidden_dim
+        self.hidden_dim = dec_hid_dim 
         self.n_layers = n_layers
+        self.attention = attention
 
         self.embedding = nn.Embedding(output_dim, emb_dim, padding_idx=pad_idx)
 
-        self.rnn = nn.LSTM(emb_dim, hidden_dim, n_layers,
+        self.rnn = nn.LSTM(emb_dim + (enc_hid_dim * 2), dec_hid_dim, n_layers,
                            dropout=dropout if n_layers > 1 else 0, batch_first=True)
         
-        self.fc_out = nn.Linear(hidden_dim, output_dim)
+        self.fc_out = nn.Linear(emb_dim + (enc_hid_dim * 2) + dec_hid_dim, output_dim)
 
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, input, hidden, cell):
+    def forward(self, input, hidden, cell, encoder_outputs):
         """
             Procesa un paso de la decodificación:
             Arg:
@@ -98,9 +102,21 @@ class Decoder(nn.Module):
         input = input.unsqueeze(1) # input = [batch size, 1]
         embedded = self.dropout(self.embedding(input)) # embedded = [batch size, 1, emb dim]
 
-        output, (hidden, cell) = self.rnn(embedded, (hidden, cell))
+        context, attention_weights = self.attention(hidden, encoder_outputs)
 
-        prediction = self.fc_out(output.squeeze(1))
+        context = context.unsqueeze(1)
+
+        rnn_input = torch.cat((embedded, context), dim=2)
+
+        rnn_output, (hidden, cell) = self.rnn(rnn_input, (hidden, cell))
+
+        embedded = embedded.squeeze(1)     
+        context = context.squeeze(1)       
+        rnn_output = rnn_output.squeeze(1) 
+
+        fc_input = torch.cat((embedded, context, rnn_output), dim=1)
+
+        prediction = self.fc_out(fc_input)
 
         return prediction, hidden, cell
 
@@ -118,10 +134,9 @@ class Seq2Seq(nn.Module):
         self.decoder = decoder
         self.device = device
 
-        assert encoder.hidden_dim == decoder.hidden_dim, \
-            "Las dimensiones ocultas del encoder y decoder deben de ser iguales"
-        assert encoder.n_layers == decoder.n_layers, \
-            "El encoder y decoder deben de tener el mismo numero de capas"
+        if hasattr(encoder, 'n_layers') and hasattr(decoder, 'n_layers'):
+             assert encoder.n_layers == decoder.n_layers, \
+                 "El encoder y decoder deben de tener el mismo numero de capas"
 
     def forward(self, src, trg, teacher_forcing_ratio = 0.5):
         """
@@ -146,7 +161,7 @@ class Seq2Seq(nn.Module):
 
         for t in range(1, trg_len): # Predecimos a partir del segundo token
 
-            output, hidden, cell = self.decoder(input, hidden, cell)
+            output, hidden, cell = self.decoder(input, hidden, cell, encoder_outputs)
 
             # Guardamos las predicciones en el tensor de salida
             outputs[:, t, :] = output 
