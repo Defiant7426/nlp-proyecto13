@@ -70,7 +70,7 @@ class Decoder(nn.Module):
                 dropout (float): Probabilidad de dropout
                 pad_idx: Indice del token de padding en el vocabulario
         """
-        super.__init__() # Configuraciones internas del Module.nn en el Decoder
+        super().__init__() # Configuraciones internas del Module.nn en el Decoder
 
         self.output_dim = output_dim
         self.hidden_dim = hidden_dim
